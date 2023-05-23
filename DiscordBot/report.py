@@ -8,6 +8,9 @@ class State(Enum):
     MESSAGE_IDENTIFIED = auto()
     REPORT_COMPLETE = auto()
 
+    # Beginning of Custom States
+    REPORT_REASON_PROMPTED = auto()
+
 class Report:
     START_KEYWORD = "report"
     CANCEL_KEYWORD = "cancel"
@@ -24,6 +27,7 @@ class Report:
         prompts to offer at each of those states. You're welcome to change anything you want; this skeleton is just here to
         get you started and give you a model for working with Discord. 
         '''
+        reportReasons = ["Phishing and Malware-Related Scams", "Social Engineering Scams", "Trade and Transaction Scams", "Fake Service and Site Scams", "Other"]
 
         if message.content == self.CANCEL_KEYWORD:
             self.state = State.REPORT_COMPLETE
@@ -55,13 +59,25 @@ class Report:
 
             # Here we've found the message - it's up to you to decide what to do next!
             self.state = State.MESSAGE_IDENTIFIED
-            return ["I found this message:", "```" + message.author.name + ": " + message.content + "```", \
-                    "This is all I know how to do right now - it's up to you to build out the rest of my reporting flow!"]
-        
+            return ["I found this message:", "```" + message.author.name + ": " + message.content + "```"]
+            
+        # Continue with identifying the reason
         if self.state == State.MESSAGE_IDENTIFIED:
-            return ["<insert rest of reporting flow here>"]
+            reply = "Thanks for reporting this message. Please type the reason for reporting the message. We can support the following: "
+            reply += reportReasons
+            reply += str(reportReasons)
+            self.state = State.REPORT_REASON_PROMPTED
+            return [reply]
+        
+        if self.state == State.REPORT_REASON_PROMPTED:
+            reply = "It seems that you have identified the report reasoning as: " + message.content + "."
+            if message.content not in reportReasons:
+                reply += "That reason is not in our supported reporting categories."
+            return [reply]
 
         return []
+    
+    
 
     def report_complete(self):
         return self.state == State.REPORT_COMPLETE
