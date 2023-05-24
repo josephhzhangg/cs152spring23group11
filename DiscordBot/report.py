@@ -9,12 +9,27 @@ class State(Enum):
     REPORT_COMPLETE = auto()
 
     # Beginning of Custom States
-    REPORT_REASON_PROMPTED = auto()
+    Phishing_and_Malware_Related_Scams_Category = auto()
+    Social_Engineering_Scams = auto()
+    Trade_and_Transaction_Scams = auto()
+    Fake_Service_and_Site_Scams = auto()
+    Other_Scams = auto()
+    Prompt_Additional_Description = auto()
+    Received_Additional_Description = auto()
+    Awaiting_User_Acknowledgement = auto()
+    Awaiting_Block = auto()
+    
 
 class Report:
     START_KEYWORD = "report"
     CANCEL_KEYWORD = "cancel"
     HELP_KEYWORD = "help"
+
+    report_reasons = ["Phishing and Malware-Related Scams", "Social Engineering Scams", "Trade and Transaction Scams", "Fake Service and Site Scams", "Other"]
+    phishing_and_malware_categories = ["Phishing Email or Message", "Link to Malware Download", "Fake Steam Code Generator", "Other"]
+    social_engineering_categories = ["Impersonation or False Identity", "Fraudulent Giveaway or Sweepstakes", "Middleman Scams", "False Skin Inspection", "Other"]
+    trade_and_transaction_categories = ["False Trade Offers", "Real Currency Transaction Scams", "False Market Listing", "Non-Human Transaction", "Chargeback Scam", "Other"]
+    fake_service_and_site_categories = ["Betting Scams", "Gift Card Scams", "False Skin Upgrade Offers", "False Trading Site", "Other"]
 
     def __init__(self, client):
         self.state = State.REPORT_START
@@ -27,7 +42,7 @@ class Report:
         prompts to offer at each of those states. You're welcome to change anything you want; this skeleton is just here to
         get you started and give you a model for working with Discord. 
         '''
-        reportReasons = ["Phishing and Malware-Related Scams", "Social Engineering Scams", "Trade and Transaction Scams", "Fake Service and Site Scams", "Other"]
+        
 
         if message.content == self.CANCEL_KEYWORD:
             self.state = State.REPORT_COMPLETE
@@ -57,24 +72,95 @@ class Report:
             except discord.errors.NotFound:
                 return ["It seems this message was deleted or never existed. Please try again or say `cancel` to cancel."]
 
-            # Here we've found the message - it's up to you to decide what to do next!
             self.state = State.MESSAGE_IDENTIFIED
-            return ["I found this message:", "```" + message.author.name + ": " + message.content + "```"]
+            return ["I found this message:", "```" + message.author.name + ": " + message.content + "```. How do you want to classify this message? We can support the following: \n"
+                    +  str(self.report_reasons)]
             
         # Continue with identifying the reason
         if self.state == State.MESSAGE_IDENTIFIED:
-            reply = "Thanks for reporting this message. Please type the reason for reporting the message. We can support the following: "
-            reply += reportReasons
-            reply += str(reportReasons)
-            self.state = State.REPORT_REASON_PROMPTED
+            if message.content == "Phishing and Malware-Related Scams":
+                self.state = State.Phishing_and_Malware_Related_Scams_Category
+            elif message.content == "Social Engineering Scams":
+                self.state = State.Social_Engineering_Scams
+            elif message.content == "Trade and Transaction Scams":
+                self.state = State.Trade_and_Transaction_Scams
+            elif message.content == "Fake Service and Site Scams":
+                self.state = State.Fake_Service_and_Site_Scams
+            else:
+                self.state = State.Other_Scams
+            
+            if self.state == State.Phishing_and_Malware_Related_Scams_Category:
+                reply = "Thank you for reporting under the Phishing and Malware Related Scams Category. \n"
+                reply += "Please select the type of phishing or malware content that this report falls under: \n"
+                reply += str(self.phishing_and_malware_categories)
+
+                self.state = State.Prompt_Additional_Description
+                return [reply]
+            
+            if self.state == State.Social_Engineering_Scams:
+                reply = "Thank you for reporting under the Social Engineering Scams Category. \n"
+                reply += "Please select the type of social engineering content that this report falls under: \n"
+                reply += str(self.social_engineering_categories)
+
+                self.state = State.Prompt_Additional_Description
+                return [reply]
+            
+            if self.state == State.Trade_and_Transaction_Scams:
+                reply = "Thank you for reporting under the Trade and Transaction Scams Category. \n"
+                reply += "Please select the type of trade and transaction scam content that this report falls under: \n"
+                reply += str(self.trade_and_transaction_categories)
+
+                self.state = State.Prompt_Additional_Description
+                return [reply]
+
+            if self.state == State.Fake_Service_and_Site_Scams:
+                reply = "Thank you for reporting under the Fake Service and Site Scams Category. \n"
+                reply += "Please select the type of fake service and site scam content that this report falls under: \n"
+                reply += str(self.fake_service_and_site_categories)
+
+                self.state = State.Prompt_Additional_Description
+                return [reply]
+
+            if self.state == State.Other_Scams:
+                reply = "Thank you for reporting under the Other Scams Category. \n"
+                reply += ("Please provide any additional descriptions or supporting material of the abuse (Screenshots, Text Messages, URLs, etc.) This will significantly improve"
+                    "our ability to review the report and provide corrective action")
+                self.state = State.Received_Additional_Description
+                return [reply]
+
+
+        if self.state == State.Prompt_Additional_Description: 
+            reply = ("Please provide any additional descriptions or supporting material of the abuse (Screenshots, Text Messages, URLs, etc.) This will significantly improve"
+                    "our ability to review the report and provide corrective action")
+            self.state = State.Received_Additional_Description
+
+        if self.state == State.Received_Additional_Description:
+            reply = ("Thank you for your report! \n Our abuse moderation team will review your case and decide on appropriate action. Please note that under no circumstances"
+            " will transactions be reversed or restored, per our User Policy. \n To complete the report, please type `I understand` to acknowledge the report conditions")
+            self.state = State.Awaiting_User_Acknowledgement
             return [reply]
         
-        if self.state == State.REPORT_REASON_PROMPTED:
-            reply = "It seems that you have identified the report reasoning as: " + message.content + "."
-            if message.content not in reportReasons:
-                reply += "That reason is not in our supported reporting categories."
-            return [reply]
+        if self.state == State.Awaiting_User_Acknowledgement:
+            if message.content == "I understand":
+                reply = ("Thank you for acknowledging that. Would you like to block this user to prevent them from sending you more "
+                "messages in the future? Please type 'yes' or 'no'")
 
+                self.state = State.Awaiting_Block
+            else:
+                reply = "Sorry. I'm unable to continue without acknowledgement of our trade policy"
+                self.state = State.Received_Additional_Description
+            return [reply]
+        
+        if self.state == State.Awaiting_Block:
+            if message.content == "Yes" or message.content == "yes":
+                reply = "I've gone ahead and blocked the user from interacting with you. Future accounts created by the user will be blocked from you as well."
+            elif message.content == "No" or message.content == "no":
+                reply = "Sounds good. I'll go ahead and forward the information to a specialized team who can decide future action"
+            self.state = State.REPORT_COMPLETE
+            return [reply]
+        
+
+        
         return []
     
     
