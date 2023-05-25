@@ -35,6 +35,39 @@ class ModBot(discord.Client):
         self.mod_channels = {} # Map from guild to the mod channel id for that guild
         self.reports = {} # Map from user IDs to the state of their report
 
+    async def on_raw_reaction_add(self, payload):
+        # ensure it's the mod channel and a mod reacting
+        if payload.channel_id in self.mod_channels.values() and payload.member.guild_permissions.manage_messages:
+
+            emoji_map = {
+                "1️⃣": "No action taken.",
+                "2️⃣": "Fraudulent site warning.",
+                "3️⃣": "Warning to the abuser.",
+                "4️⃣": "User Suspension or Ban.",
+                "5️⃣": "Shadow ban.",
+            }
+
+            # lookup the outcome based on the emoji
+            outcome = emoji_map.get(str(payload.emoji), None)
+            if outcome:
+                channel = self.get_channel(payload.channel_id)
+                message = await channel.fetch_message(payload.message_id)
+                # get the reporter's id from the message content
+                reporter_id = self.extract_reporter_id_from_message(message.content)
+                if reporter_id is not None:
+                    await self.notify_report_outcome(reporter_id, outcome)
+
+    # TODO: Basically, I just need to see where the reporter_id is coming from because currently I also have it sent over from the Report class
+    def extract_reporter_id_from_message(self, content):
+        pass
+
+    async def notify_report_outcome(self, reporter_id: int, outcome: str):
+        reporter = await self.fetch_user(reporter_id)
+        if not reporter:
+            print(f"Failed to fetch user {reporter_id}")
+            return
+        await reporter.send(f"Your report has been processed. Outcome: {outcome}")
+
     async def on_ready(self):
         print(f'{self.user.name} has connected to Discord! It is these guilds:')
         for guild in self.guilds:
@@ -73,7 +106,7 @@ class ModBot(discord.Client):
     async def handle_dm(self, message):
         # Handle a help message
         if message.content == Report.HELP_KEYWORD:
-            reply =  "Use the `report` command to begin the reporting process.\n"
+            reply = "Use the `report` command to begin the reporting process.\n"
             reply += "Use the `cancel` command to cancel the report process.\n"
             await message.channel.send(reply)
             return
@@ -89,7 +122,7 @@ class ModBot(discord.Client):
         if author_id not in self.reports:
             self.reports[author_id] = Report(self)
 
-        # Let the report class handle this message; forward all the messages it returns to uss
+        # Let the report class handle this message; forward all the messages it returns to us
         responses = await self.reports[author_id].handle_message(message)
         for r in responses:
             await message.channel.send(r)
@@ -124,7 +157,7 @@ class ModBot(discord.Client):
         evaluated, insert your code here for formatting the string to be 
         shown in the mod channel. 
         '''
-        return "Evaluated: '" + text+ "'"
+        return "Evaluated: '" + text + "'"
 
 
 client = ModBot()
