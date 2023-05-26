@@ -36,8 +36,7 @@ class Report:
         self.state = State.REPORT_START
         self.client = client
         self.report = {}
-
-    REPORT_CHANNEL_ID = 1103033286760091721
+        self.REPORT_CHANNEL_ID = 1103033286760091721
 
     async def handle_message(self, message):
         '''
@@ -79,7 +78,8 @@ class Report:
                 return ["It seems this message was deleted or never existed. Please try again or say `cancel` to cancel."]
 
             self.state = State.MESSAGE_IDENTIFIED
-            return ["I found this message:", "```" + message.author.name + ": " + message.content + "```. How do you want to classify this message? We can support the following: \n"
+            self.report["Reported Message"] = "```" + message.author.name + ": " + message.content + "```"
+            return ["I found this message:", "```" + message.author.name + ": " + message.content + "``` How do you want to classify this message? We can support the following: \n"
                     + str(self.report_reasons)]
             
         # Continue with identifying the reason
@@ -95,7 +95,7 @@ class Report:
             else:
                 self.state = State.Other_Scams
 
-            self.report["Report Reason"] = message.content.copy()
+            self.report["Report Reason"] = message.content
             
             if self.state == State.Phishing_and_Malware_Related_Scams_Category:
                 reply = "Thank you for reporting under the Phishing and Malware Related Scams Category. \n"
@@ -168,22 +168,19 @@ class Report:
                 reply = "Sounds good. I'll go ahead and forward the information to a specialized team who can decide future action"
             self.report["Blocked"] = (message.content.lower() == "yes")
             self.state = State.REPORT_COMPLETE
+            await self.send_report()
             return [reply]
-
-        if self.state == State.REPORT_COMPLETE:
-            report_channel = self.client.get_channel(self.REPORT_CHANNEL_ID)
-            report_message = f"Report by {message.author.name}:\n\n"
-            for key, value in self.report.items():
-                report_message += f"{key}: {value}\n"
-            await report_channel.send(report_message)
-            return ["Report complete. The moderators have been notified."]
-
         return
+
+    async def send_report(self):
+        report_channel = self.client.get_channel(self.REPORT_CHANNEL_ID)
+        report_message = f"Report by {self.report['reporter']}:\n\n"
+        self.report.pop("reporter")
+        for key, value in self.report.items():
+            report_message += f"{key}: {value}\n"
+        await report_channel.send(report_message)
 
     def report_complete(self):
         return self.state == State.REPORT_COMPLETE
-    
-
-
     
 

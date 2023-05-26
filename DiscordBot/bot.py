@@ -36,9 +36,8 @@ class ModBot(discord.Client):
         self.reports = {} # Map from user IDs to the state of their report
 
     async def on_raw_reaction_add(self, payload):
-        # ensure it's the mod channel and a mod reacting
-        if payload.channel_id in self.mod_channels.values() and payload.member.guild_permissions.manage_messages:
-
+        channel_ids = [channel.id for channel in self.mod_channels.values()]
+        if payload.channel_id in channel_ids:
             emoji_map = {
                 "1️⃣": "No action taken.",
                 "2️⃣": "Fraudulent site warning.",
@@ -48,6 +47,7 @@ class ModBot(discord.Client):
             }
 
             # lookup the outcome based on the emoji
+            print(payload.emoji)
             outcome = emoji_map.get(str(payload.emoji), None)
             if outcome:
                 channel = self.get_channel(payload.channel_id)
@@ -57,9 +57,14 @@ class ModBot(discord.Client):
                 if reporter_id is not None:
                     await self.notify_report_outcome(reporter_id, outcome)
 
-    # TODO: Basically, I just need to see where the reporter_id is coming from because currently I also have it sent over from the Report class
     def extract_reporter_id_from_message(self, content):
-        pass
+        # The reporter_id follows "Report by " at the beginning of the message
+        match = re.search('Report by (\d+):', content)
+        if match:
+            return int(match.group(1))
+        else:
+            print(f"Failed to extract reporter_id from message: {content}")
+            return None
 
     async def notify_report_outcome(self, reporter_id: int, outcome: str):
         reporter = await self.fetch_user(reporter_id)
