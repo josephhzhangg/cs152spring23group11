@@ -19,6 +19,7 @@ class State(Enum):
     Received_Additional_Description = auto()
     Awaiting_User_Acknowledgement = auto()
     Awaiting_Block = auto()
+    AWAITING_TYPE_SELECTION = auto()
     
 
 class Report:
@@ -102,8 +103,7 @@ class Report:
                 reply = "Thank you for reporting under the Phishing and Malware Related Scams Category. \n"
                 reply += "Please select the type of phishing or malware content that this report falls under: \n"
                 reply += str(self.phishing_and_malware_categories)
-
-                self.state = State.Prompt_Additional_Description
+                self.state = State.AWAITING_TYPE_SELECTION
                 return [reply]
             
             if self.state == State.Social_Engineering_Scams:
@@ -111,7 +111,7 @@ class Report:
                 reply += "Please select the type of social engineering content that this report falls under: \n"
                 reply += str(self.social_engineering_categories)
 
-                self.state = State.Prompt_Additional_Description
+                self.state = State.AWAITING_TYPE_SELECTION
                 return [reply]
             
             if self.state == State.Trade_and_Transaction_Scams:
@@ -119,7 +119,7 @@ class Report:
                 reply += "Please select the type of trade and transaction scam content that this report falls under: \n"
                 reply += str(self.trade_and_transaction_categories)
 
-                self.state = State.Prompt_Additional_Description
+                self.state = State.AWAITING_TYPE_SELECTION
                 return [reply]
 
             if self.state == State.Fake_Service_and_Site_Scams:
@@ -127,7 +127,7 @@ class Report:
                 reply += "Please select the type of fake service and site scam content that this report falls under: \n"
                 reply += str(self.fake_service_and_site_categories)
 
-                self.state = State.Prompt_Additional_Description
+                self.state = State.AWAITING_TYPE_SELECTION
                 return [reply]
 
             if self.state == State.Other_Scams:
@@ -138,16 +138,23 @@ class Report:
                 return [reply]
 
         reply = ""
-        if self.state == State.Prompt_Additional_Description: 
+        if self.state == State.AWAITING_TYPE_SELECTION:
+            self.report["Category"] = message.content
+            reply = (
+                "Please provide any additional descriptions or supporting material of the abuse (Screenshots, Text Messages, URLs, etc.) This will significantly improve"
+                "our ability to review the report and provide corrective action")
+            self.state = State.Prompt_Additional_Description
+            return [reply]
+
+        if self.state == State.Prompt_Additional_Description:
             reply = ("Please provide any additional descriptions or supporting material of the abuse (Screenshots, Text Messages, URLs, etc.) This will significantly improve"
                     "our ability to review the report and provide corrective action")
-            self.report["Category"] = message.content
+            self.report["Additional Info"] = message.content
             self.state = State.Received_Additional_Description
 
         if self.state == State.Received_Additional_Description:
             reply = ("Thank you for your report! \n Our abuse moderation team will review your case and decide on appropriate action. Please note that under no circumstances"
             " will transactions be reversed or restored, per our User Policy. \n To complete the report, please type `I understand` to acknowledge the report conditions")
-            self.report["Additional Description"] = message.content
             self.state = State.Awaiting_User_Acknowledgement
             return [reply]
         
@@ -180,7 +187,22 @@ class Report:
         self.report.pop("Reporter")
         for key, value in self.report.items():
             report_message += f"{key}: {value}\n"
-        await report_channel.send(report_message)
+
+        report_message += "\n\nPlease vote for the appropriate action:\n"
+        emoji_map = {
+            "1️⃣": "No action taken.",
+            "2️⃣": "Fraudulent site warning.",
+            "3️⃣": "Warning to the abuser.",
+            "4️⃣": "User Suspension or Ban.",
+            "5️⃣": "Shadow ban.",
+        }
+        for emoji, action in emoji_map.items():
+            report_message += f"{emoji}: {action}\n"
+
+        message = await report_channel.send(report_message)
+
+        for emoji in emoji_map:
+            await message.add_reaction(emoji)
 
     def report_complete(self):
         return self.state == State.REPORT_COMPLETE

@@ -36,7 +36,16 @@ class ModBot(discord.Client):
         self.reports = {}  # Map from user IDs to the state of their report
 
         self.vote_cache = {}  # For voting on the outcomes
+        self.suspension_vote_cache = {}
         self.required_votes = 2  # CHANGE NUMBER OF REQUIRED VOTES
+        self.duration_map = {
+            "1️⃣": "1 Hour",
+            "2️⃣": "24 Hours",
+            "3️⃣": "1 Week",
+            "4️⃣": "1 Month",
+            "5️⃣": "1 Year",
+            "🔒": "Permanent Ban",
+        }
 
     async def on_raw_reaction_add(self, payload):
         if payload.user_id == self.user.id:  # check if the reaction was made by the bot
@@ -68,28 +77,57 @@ class ModBot(discord.Client):
                     reporter_id, abuser_id = self.extract_ids_from_message(message.content)
                     reported_message, report_reason = self.extract_report_from_message(message.content)
                     if reporter_id is not None and abuser_id is not None:
-                        await self.notify_report_outcome(reporter_id, abuser_id, outcome, reported_message, report_reason, payload)
-                    if outcome == "User Suspension or Ban.":
-                        await self.send_suspension_duration_vote(channel, abuser_id)
-                    del self.vote_cache[payload.message_id]  # delete this message from vote cache
+                        await self.notify_report_outcome(reporter_id, abuser_id, outcome, reported_message,
+                                                         report_reason, payload)
+                        if outcome == "User Suspension or Ban.":
+                            await self.send_suspension_duration_vote(channel, abuser_id, report_reason)
+                        else:
+                            del self.vote_cache[payload.message_id]  # delete this message from vote cache
 
-    async def send_suspension_duration_vote(self, channel, abuser_id):
-        emoji_map = {
-            "1️⃣": "1 Hour",
-            "2️⃣": "24 Hours",
-            "3️⃣": "1 Week",
-            "4️⃣": "1 Month",
-            "5️⃣": "1 Year",
-            "🔴": "Permanent Ban",
-        }
-        vote_message = await channel.send(
-            "Please vote on the suspension duration for user {}:\n\n".format(abuser_id) + "\n".join(
-                ["{}: {}".format(emoji, duration) for emoji, duration in emoji_map.items()]))
-        # add reactions to the vote message
-        for emoji in emoji_map.keys():
-            await vote_message.add_reaction(emoji)
-        # initialize the vote count for this message
-        self.vote_cache[vote_message.id] = {emoji: 0 for emoji in emoji_map.keys()}
+            suspension_vote = self.suspension_vote_cache.get(payload.message_id, None)
+            if suspension_vote:
+                # increment the vote count for this suspension vote
+                if payload.user_id != self.user.id:
+                    suspension_vote[str(payload.emoji)] += 1
+                # check if the required number of votes has been reached for this suspension duration
+                if suspension_vote[str(payload.emoji)] >= self.required_votes:
+                    # notify the user of their suspension
+                    await self.send_suspension_notification(
+                        suspension_vote['user_id'],
+                        self.duration_map[str(payload.emoji)],
+                        suspension_vote['report_reason']
+                    )
+                    # delete this suspension vote from the cache
+                    del self.suspension_vote_cache[payload.message_id]
+
+    async def send_suspension_duration_vote(self, channel, abuser_id, report_reason):
+        emoji_map = self.duration_map
+        emoji_list = list(emoji_map.keys())
+
+        message_content = (
+            f"A user suspension vote has been initiated for user {abuser_id}.\n"
+            "React with the appropriate emoji to vote for the duration of the suspension:\n"
+            "1️⃣ - 1 Hour\n"
+            "2️⃣ - 24 Hours\n"
+            "3️⃣ - 1 Week\n"
+            "4️⃣ - 1 Month\n"
+            "5️⃣ - 1 Year\n"
+            "🔒 - Permanent Ban"
+        )
+        message = await channel.send(message_content)
+        for emoji in emoji_list:
+            await message.add_reaction(emoji)
+        # initialize the vote count for this suspension vote
+        self.suspension_vote_cache[message.id] = {emoji: 0 for emoji in emoji_map.keys()}
+        self.suspension_vote_cache[message.id]['user_id'] = abuser_id
+        self.suspension_vote_cache[message.id]['report_reason'] = report_reason
+
+    async def send_suspension_notification(self, user_id: int, duration: str, report_reason: str):
+        user = await self.fetch_user(user_id)
+        if user:
+            await user.send(
+                f"You have been suspended for {duration} for the following reason: {report_reason}"
+            )
 
     def extract_ids_from_message(self, content):
         # The abuser_id follows at the beginning and the reporter_id follows "reported by "
@@ -117,15 +155,11 @@ class ModBot(discord.Client):
             await reporter.send(f"Your report has been processed. Outcome: {outcome}")
 
         # If the outcome is a warning or suspension/ban, notify the abuser
-        if outcome in ["Warning to the abuser.", "User Suspension or Ban."]:
+        if outcome in ["Fraudulent site warning.", "Warning to the abuser.", "User Suspension or Ban."]:
             abuser = await self.fetch_user(abuser_id)
             if abuser:
                 await abuser.send(
                     f"Your message:\n\n{reported_message}\n\nwas reported for the following reason: {report_reason}\n\nOutcome: {outcome}")
-                # If the outcome is a suspension or ban, include the duration
-                if outcome == "User Suspension or Ban.":
-                    duration = self.vote_cache[payload.message_id][str(payload.emoji)]
-                    await abuser.send(f"You have been suspended for {duration}.")
 
     async def on_ready(self):
         print(f'{self.user.name} has connected to Discord! It is these guilds:')
