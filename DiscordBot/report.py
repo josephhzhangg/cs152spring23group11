@@ -56,7 +56,7 @@ class Report:
             reply += "You can obtain this link by right-clicking the message and clicking `Copy Message Link`."
 
             # Store the reporter's id
-            self.report["reporter"] = message.author.id
+            self.report["Reporter"] = message.author.id
 
             self.state = State.AWAITING_MESSAGE
             return [reply]
@@ -79,6 +79,7 @@ class Report:
 
             self.state = State.MESSAGE_IDENTIFIED
             self.report["Reported Message"] = "```" + message.author.name + ": " + message.content + "```"
+            self.report["Abuser"] = message.author.id
             return ["I found this message:", "```" + message.author.name + ": " + message.content + "``` How do you want to classify this message? We can support the following: \n"
                     + str(self.report_reasons)]
             
@@ -174,8 +175,9 @@ class Report:
 
     async def send_report(self):
         report_channel = self.client.get_channel(self.REPORT_CHANNEL_ID)
-        report_message = f"Report by {self.report['reporter']}:\n\n"
-        self.report.pop("reporter")
+        report_message = f"{self.report['Abuser']} reported by {self.report['Reporter']}:\n\n"
+        self.report.pop("Abuser")
+        self.report.pop("Reporter")
         for key, value in self.report.items():
             report_message += f"{key}: {value}\n"
         await report_channel.send(report_message)

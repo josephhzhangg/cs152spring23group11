@@ -32,10 +32,15 @@ class ModBot(discord.Client):
         intents.message_content = True
         super().__init__(command_prefix='.', intents=intents)
         self.group_num = None
-        self.mod_channels = {} # Map from guild to the mod channel id for that guild
-        self.reports = {} # Map from user IDs to the state of their report
+        self.mod_channels = {}  # Map from guild to the mod channel id for that guild
+        self.reports = {}  # Map from user IDs to the state of their report
+
+        self.vote_cache = {}  # For voting on the outcomes
+        self.required_votes = 2  # CHANGE NUMBER OF REQUIRED VOTES
 
     async def on_raw_reaction_add(self, payload):
+        if payload.user_id == self.user.id:  # check if the reaction was made by the bot
+            return
         channel_ids = [channel.id for channel in self.mod_channels.values()]
         if payload.channel_id in channel_ids:
             emoji_map = {
@@ -47,31 +52,80 @@ class ModBot(discord.Client):
             }
 
             # lookup the outcome based on the emoji
-            print(payload.emoji)
             outcome = emoji_map.get(str(payload.emoji), None)
             if outcome:
-                channel = self.get_channel(payload.channel_id)
-                message = await channel.fetch_message(payload.message_id)
-                # get the reporter's id from the message content
-                reporter_id = self.extract_reporter_id_from_message(message.content)
-                if reporter_id is not None:
-                    await self.notify_report_outcome(reporter_id, outcome)
+                if payload.message_id not in self.vote_cache:
+                    # initialize the vote count for this message
+                    self.vote_cache[payload.message_id] = {emoji: 0 for emoji in emoji_map.keys()}
+                # increment the vote count for the chosen emoji
+                if payload.user_id != self.user.id:
+                    self.vote_cache[payload.message_id][str(payload.emoji)] += 1
+                # check if the required number of votes has been reached
+                if self.vote_cache[payload.message_id][str(payload.emoji)] >= self.required_votes:
+                    channel = self.get_channel(payload.channel_id)
+                    message = await channel.fetch_message(payload.message_id)
+                    # get the reporter's id and abuser's id from the message content
+                    reporter_id, abuser_id = self.extract_ids_from_message(message.content)
+                    reported_message, report_reason = self.extract_report_from_message(message.content)
+                    if reporter_id is not None and abuser_id is not None:
+                        await self.notify_report_outcome(reporter_id, abuser_id, outcome, reported_message, report_reason, payload)
+                    if outcome == "User Suspension or Ban.":
+                        await self.send_suspension_duration_vote(channel, abuser_id)
+                    del self.vote_cache[payload.message_id]  # delete this message from vote cache
 
-    def extract_reporter_id_from_message(self, content):
-        # The reporter_id follows "Report by " at the beginning of the message
-        match = re.search('Report by (\d+):', content)
+    async def send_suspension_duration_vote(self, channel, abuser_id):
+        emoji_map = {
+            "1️⃣": "1 Hour",
+            "2️⃣": "24 Hours",
+            "3️⃣": "1 Week",
+            "4️⃣": "1 Month",
+            "5️⃣": "1 Year",
+            "🔴": "Permanent Ban",
+        }
+        vote_message = await channel.send(
+            "Please vote on the suspension duration for user {}:\n\n".format(abuser_id) + "\n".join(
+                ["{}: {}".format(emoji, duration) for emoji, duration in emoji_map.items()]))
+        # add reactions to the vote message
+        for emoji in emoji_map.keys():
+            await vote_message.add_reaction(emoji)
+        # initialize the vote count for this message
+        self.vote_cache[vote_message.id] = {emoji: 0 for emoji in emoji_map.keys()}
+
+    def extract_ids_from_message(self, content):
+        # The abuser_id follows at the beginning and the reporter_id follows "reported by "
+        match = re.search('(\d+) reported by (\d+):', content)
         if match:
-            return int(match.group(1))
+            return int(match.group(2)), int(match.group(1))  # returns a tuple of (reporter_id, abuser_id)
         else:
-            print(f"Failed to extract reporter_id from message: {content}")
-            return None
+            print(f"Failed to extract reporter_id and abuser_id from message: {content}")
+            return None, None
 
-    async def notify_report_outcome(self, reporter_id: int, outcome: str):
+    def extract_report_from_message(self, content):
+        # The reported message and reason are located after "Reported Message: " and "Report Reason: " respectively
+        match = re.search('Reported Message: (.+)\nReport Reason: (.+)', content)
+        if match:
+            return match.group(1), match.group(2)  # returns a tuple of (reported_message, report_reason)
+        else:
+            print(f"Failed to extract reported message and reason from message: {content}")
+            return None, None
+
+    async def notify_report_outcome(self, reporter_id: int, abuser_id: int, outcome: str, reported_message: str,
+                                    report_reason: str, payload):
+        # Send the outcome to the reporter
         reporter = await self.fetch_user(reporter_id)
-        if not reporter:
-            print(f"Failed to fetch user {reporter_id}")
-            return
-        await reporter.send(f"Your report has been processed. Outcome: {outcome}")
+        if reporter:
+            await reporter.send(f"Your report has been processed. Outcome: {outcome}")
+
+        # If the outcome is a warning or suspension/ban, notify the abuser
+        if outcome in ["Warning to the abuser.", "User Suspension or Ban."]:
+            abuser = await self.fetch_user(abuser_id)
+            if abuser:
+                await abuser.send(
+                    f"Your message:\n\n{reported_message}\n\nwas reported for the following reason: {report_reason}\n\nOutcome: {outcome}")
+                # If the outcome is a suspension or ban, include the duration
+                if outcome == "User Suspension or Ban.":
+                    duration = self.vote_cache[payload.message_id][str(payload.emoji)]
+                    await abuser.send(f"You have been suspended for {duration}.")
 
     async def on_ready(self):
         print(f'{self.user.name} has connected to Discord! It is these guilds:')
@@ -142,11 +196,13 @@ class ModBot(discord.Client):
             return
 
         # Forward the message to the mod channel
+
+        """
         mod_channel = self.mod_channels[message.guild.id]
         await mod_channel.send(f'Forwarded message:\n{message.author.name}: "{message.content}"')
         scores = self.eval_text(message.content)
         await mod_channel.send(self.code_format(scores))
-
+        """
     
     def eval_text(self, message):
         ''''
