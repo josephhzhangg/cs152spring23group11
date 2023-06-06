@@ -9,6 +9,8 @@ import requests
 from report import Report
 import pdb
 
+from gpt import Classifier
+
 # Set up logging to the console
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
@@ -27,7 +29,7 @@ with open(token_path) as f:
 
 
 class ModBot(discord.Client):
-    def __init__(self): 
+    def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix='.', intents=intents)
@@ -37,7 +39,7 @@ class ModBot(discord.Client):
 
         self.vote_cache = {}  # For voting on the outcomes
         self.suspension_vote_cache = {}
-        self.required_votes = 2  # CHANGE NUMBER OF REQUIRED VOTES
+        self.required_votes = 1  # CHANGE NUMBER OF REQUIRED VOTES
         self.duration_map = {
             "1️⃣": "1 Hour",
             "2️⃣": "24 Hours",
@@ -46,6 +48,9 @@ class ModBot(discord.Client):
             "5️⃣": "1 Year",
             "🔒": "Permanent Ban",
         }
+
+        self.classifier = Classifier()
+        self.bot_id = 1110355852113748100
 
     async def on_raw_reaction_add(self, payload):
         if payload.user_id == self.user.id:  # check if the reaction was made by the bot
@@ -106,7 +111,7 @@ class ModBot(discord.Client):
 
         message_content = (
             f"A user suspension vote has been initiated for user {abuser_id}.\n"
-            "React with the appropriate emoji to vote for the duration of the suspension:\n"
+            "React with the appropriate emoji to vote for the duration of the suspension:\n\n"
             "1️⃣ - 1 Hour\n"
             "2️⃣ - 24 Hours\n"
             "3️⃣ - 1 Week\n"
@@ -114,6 +119,8 @@ class ModBot(discord.Client):
             "5️⃣ - 1 Year\n"
             "🔒 - Permanent Ban"
         )
+
+        message_content += "\n\n -----------------"
         message = await channel.send(message_content)
         for emoji in emoji_list:
             await message.add_reaction(emoji)
@@ -129,30 +136,47 @@ class ModBot(discord.Client):
                 f"You have been suspended for {duration} for the following reason: {report_reason}"
             )
 
+    @staticmethod
+    def is_bot_message(content):
+        return 'Suspected Message: ' in content and 'Reason: ' in content
+
     def extract_ids_from_message(self, content):
-        # The abuser_id follows at the beginning and the reporter_id follows "reported by "
-        match = re.search('(\d+) reported by (\d+):', content)
-        if match:
-            return int(match.group(2)), int(match.group(1))  # returns a tuple of (reporter_id, abuser_id)
+        if self.is_bot_message(content):
+            # The abuser_id follows after "ID: "
+            match = re.search('ID: (\d+)', content)
+            if match:
+                return self.user.id, int(match.group(1))  # returns a tuple of (reporter_id, abuser_id)
         else:
-            print(f"Failed to extract reporter_id and abuser_id from message: {content}")
-            return None, None
+            # The abuser_id follows at the beginning and the reporter_id follows "reported by "
+            match = re.search('(\d+) reported by (\d+):', content)
+            if match:
+                return int(match.group(2)), int(match.group(1))  # returns a tuple of (reporter_id, abuser_id)
+            else:
+                print(f"Failed to extract reporter_id and abuser_id from message: {content}")
+                return None, None
 
     def extract_report_from_message(self, content):
-        # The reported message and reason are located after "Reported Message: " and "Report Reason: " respectively
-        match = re.search('Reported Message: (.+)\nReport Reason: (.+)', content)
-        if match:
-            return match.group(1), match.group(2)  # returns a tuple of (reported_message, report_reason)
+        if self.is_bot_message(content):
+            # The reported message and reason are located after "Suspected Message: " and "Reason: " respectively
+            match = re.search('Suspected Message: .+ID: \d+\): (.+)\nReason: (.+)', content)
+            if match:
+                message = "```" + match.group(1)
+                return message, match.group(2)  # returns a tuple of (reported_message, report_reason)
         else:
-            print(f"Failed to extract reported message and reason from message: {content}")
-            return None, None
+            # The reported message and reason are located after "Reported Message: " and "Report Reason: " respectively
+            match = re.search('Reported Message: (.+)\nReport Reason: (.+)', content)
+            if match:
+                return match.group(1), match.group(2)  # returns a tuple of (reported_message, report_reason)
+            else:
+                print(f"Failed to extract reported message and reason from message: {content}")
+                return None, None
 
     async def notify_report_outcome(self, reporter_id: int, abuser_id: int, outcome: str, reported_message: str,
                                     report_reason: str, payload):
-        # Send the outcome to the reporter
-        reporter = await self.fetch_user(reporter_id)
-        if reporter:
-            await reporter.send(f"Your report has been processed. Outcome: {outcome}")
+        if reporter_id != self.bot_id:
+            reporter = await self.fetch_user(reporter_id)
+            if reporter:
+                await reporter.send(f"Your report has been processed. Outcome: {outcome}")
 
         # If the outcome is a warning or suspension/ban, notify the abuser
         if outcome in ["Fraudulent site warning.", "Warning to the abuser.", "User Suspension or Ban."]:
@@ -179,7 +203,6 @@ class ModBot(discord.Client):
             for channel in guild.text_channels:
                 if channel.name == f'group-{self.group_num}-mod':
                     self.mod_channels[guild.id] = channel
-        
 
     async def on_message(self, message):
         '''
@@ -228,16 +251,39 @@ class ModBot(discord.Client):
         # Only handle messages sent in the "group-#" channel
         if not message.channel.name == f'group-{self.group_num}':
             return
-
+        print(message.content)
         # Forward the message to the mod channel
+        outcome, reason = self.classifier.classify(message.content)
+        print(outcome)
+        if outcome == 'Scam':
+            mod_channel = self.mod_channels[message.guild.id]
 
-        """
-        mod_channel = self.mod_channels[message.guild.id]
-        await mod_channel.send(f'Forwarded message:\n{message.author.name}: "{message.content}"')
-        scores = self.eval_text(message.content)
-        await mod_channel.send(self.code_format(scores))
-        """
-    
+            emoji_map = {
+                "1️⃣": "No action taken.",
+                "2️⃣": "Fraudulent site warning.",
+                "3️⃣": "Warning to the abuser.",
+                "4️⃣": "User Suspension or Ban.",
+                "5️⃣": "Shadow ban.",
+            }
+
+            action_message = "Please react with the corresponding emoji for the action to be taken:\n\n"
+            for emoji, action in emoji_map.items():
+                action_message += f"{emoji}: {action}\n"
+            action_message += "\n-------------------------------------"
+            formatted_message = f"""
+            🚨 Potential Scam Alert 🚨
+
+Suspected Message: ```{message.author.name} (ID: {message.author.id}): {message.content}```
+Reason: {reason}
+
+{action_message}
+            """
+            scam_message = await mod_channel.send(formatted_message)
+
+            # Add emoji reactions
+            for emoji in emoji_map:
+                await scam_message.add_reaction(emoji)
+
     def eval_text(self, message):
         ''''
         TODO: Once you know how you want to evaluate messages in your channel, 
@@ -245,7 +291,6 @@ class ModBot(discord.Client):
         '''
         return message
 
-    
     def code_format(self, text):
         ''''
         TODO: Once you know how you want to show that a message has been 

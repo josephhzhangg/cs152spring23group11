@@ -38,6 +38,13 @@ class Report:
         self.client = client
         self.report = {}
         self.REPORT_CHANNEL_ID = 1103033286760091721
+        self.emoji_report_reasons = {
+            "1️⃣": "Phishing and Malware-Related Scams",
+            "2️⃣": "Social Engineering Scams",
+            "3️⃣": "Trade and Transaction Scams",
+            "4️⃣": "Fake Service and Site Scams",
+            "5️⃣": "Other"
+        }
 
     async def handle_message(self, message):
         '''
@@ -61,7 +68,7 @@ class Report:
 
             self.state = State.AWAITING_MESSAGE
             return [reply]
-        
+
         if self.state == State.AWAITING_MESSAGE:
             # Parse out the three ID strings from the message link
             m = re.search('/(\d+)/(\d+)/(\d+)', message.content)
@@ -81,9 +88,8 @@ class Report:
             self.state = State.MESSAGE_IDENTIFIED
             self.report["Reported Message"] = "```" + message.author.name + ": " + message.content + "```"
             self.report["Abuser"] = message.author.id
-            return ["I found this message:", "```" + message.author.name + ": " + message.content + "``` How do you want to classify this message? We can support the following: \n"
-                    + str(self.report_reasons)]
-            
+            return ["I found this message:", "```" + message.author.name + ": " + message.content + "``` How do you want to classify this message? We can support the following: \n" + str(self.report_reasons)]
+
         # Continue with identifying the reason
         if self.state == State.MESSAGE_IDENTIFIED:
             if message.content == "Phishing and Malware-Related Scams":
@@ -98,14 +104,14 @@ class Report:
                 self.state = State.Other_Scams
 
             self.report["Report Reason"] = message.content
-            
+
             if self.state == State.Phishing_and_Malware_Related_Scams_Category:
                 reply = "Thank you for reporting under the Phishing and Malware Related Scams Category. \n"
                 reply += "Please select the type of phishing or malware content that this report falls under: \n"
                 reply += str(self.phishing_and_malware_categories)
                 self.state = State.AWAITING_TYPE_SELECTION
                 return [reply]
-            
+
             if self.state == State.Social_Engineering_Scams:
                 reply = "Thank you for reporting under the Social Engineering Scams Category. \n"
                 reply += "Please select the type of social engineering content that this report falls under: \n"
@@ -113,7 +119,7 @@ class Report:
 
                 self.state = State.AWAITING_TYPE_SELECTION
                 return [reply]
-            
+
             if self.state == State.Trade_and_Transaction_Scams:
                 reply = "Thank you for reporting under the Trade and Transaction Scams Category. \n"
                 reply += "Please select the type of trade and transaction scam content that this report falls under: \n"
@@ -188,7 +194,7 @@ class Report:
         for key, value in self.report.items():
             report_message += f"{key}: {value}\n"
 
-        report_message += "\n\nPlease vote for the appropriate action:\n"
+        report_message += "\n Please vote for the appropriate action:\n"
         emoji_map = {
             "1️⃣": "No action taken.",
             "2️⃣": "Fraudulent site warning.",
@@ -198,7 +204,7 @@ class Report:
         }
         for emoji, action in emoji_map.items():
             report_message += f"{emoji}: {action}\n"
-
+        report_message += "\n--------------------"
         message = await report_channel.send(report_message)
 
         for emoji in emoji_map:
