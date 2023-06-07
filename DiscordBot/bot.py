@@ -10,6 +10,7 @@ from report import Report
 import pdb
 
 from gpt import Classifier
+from db import Database
 
 # Set up logging to the console
 logger = logging.getLogger('discord')
@@ -49,7 +50,9 @@ class ModBot(discord.Client):
             "🔒": "Permanent Ban",
         }
 
-        self.classifier = Classifier()
+        self.model = Classifier()
+        self.db = Database()
+        self.cur, self.con = self.db.initialize_db()
         self.bot_id = 1110355852113748100
 
     async def on_raw_reaction_add(self, payload):
@@ -144,13 +147,25 @@ class ModBot(discord.Client):
         if self.is_bot_message(content):
             # The abuser_id follows after "ID: "
             match = re.search('ID: (\d+)', content)
+            ID = int(match.group(1))
             if match:
-                return self.user.id, int(match.group(1))  # returns a tuple of (reporter_id, abuser_id)
+                self.cur.execute(f"""
+                    INSERT INTO reported VALUES
+                        ({ID})
+                """)
+                self.con.commit()
+                return self.user.id, ID  # returns a tuple of (reporter_id, abuser_id)
         else:
             # The abuser_id follows at the beginning and the reporter_id follows "reported by "
             match = re.search('(\d+) reported by (\d+):', content)
             if match:
-                return int(match.group(2)), int(match.group(1))  # returns a tuple of (reporter_id, abuser_id)
+                ID = int(match.group(1))
+                self.cur.execute(f"""
+                                    INSERT INTO reported VALUES
+                                        ({ID})
+                                """)
+                self.con.commit()
+                return int(match.group(2)), ID  # returns a tuple of (reporter_id, abuser_id)
             else:
                 print(f"Failed to extract reporter_id and abuser_id from message: {content}")
                 return None, None
@@ -248,14 +263,7 @@ class ModBot(discord.Client):
             self.reports.pop(author_id)
 
     async def handle_channel_message(self, message):
-        # Only handle messages sent in the "group-#" channel
-        if not message.channel.name == f'group-{self.group_num}':
-            return
-        print(message.content)
-        # Forward the message to the mod channel
-        outcome, reason = self.classifier.classify(message.content)
-        print(outcome)
-        if outcome == 'Scam':
+        async def report():
             mod_channel = self.mod_channels[message.guild.id]
 
             emoji_map = {
@@ -271,18 +279,39 @@ class ModBot(discord.Client):
                 action_message += f"{emoji}: {action}\n"
             action_message += "\n-------------------------------------"
             formatted_message = f"""
-            🚨 Potential Scam Alert 🚨
+                    🚨 Potential Scam Alert 🚨
 
 Suspected Message: ```{message.author.name} (ID: {message.author.id}): {message.content}```
 Reason: {reason}
 
 {action_message}
-            """
+                    """
             scam_message = await mod_channel.send(formatted_message)
 
             # Add emoji reactions
             for emoji in emoji_map:
                 await scam_message.add_reaction(emoji)
+
+        # Only handle messages sent in the "group-#" channel
+        if not message.channel.name == f'group-{self.group_num}':
+            return
+
+        attachments = message.attachments
+        if attachments:
+            for attachment in attachments:
+                print(attachment.proxy_url)
+                output, text = self.model.classify_image(attachment.proxy_url)
+                outcome, reason = output
+                if outcome == 'Scam':
+                    message.content += "\n" + text
+                    await report()
+                    break
+
+        # Forward the message to the mod channel
+        outcome, reason = self.model.classify_text(message.content)
+        if outcome == 'Scam':
+            await report()
+
 
     def eval_text(self, message):
         ''''
