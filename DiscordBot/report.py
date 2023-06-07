@@ -10,6 +10,8 @@ class State(Enum):
     REPORT_COMPLETE = auto()
 
     # Beginning of Custom States
+    Physical_and_Sexual_Violence = auto()
+    Suicidal_Content = auto()
     Phishing_and_Malware_Related_Scams_Category = auto()
     Social_Engineering_Scams = auto()
     Trade_and_Transaction_Scams = auto()
@@ -20,14 +22,14 @@ class State(Enum):
     Awaiting_User_Acknowledgement = auto()
     Awaiting_Block = auto()
     AWAITING_TYPE_SELECTION = auto()
-    
+
 
 class Report:
     START_KEYWORD = "report"
     CANCEL_KEYWORD = "cancel"
     HELP_KEYWORD = "help"
 
-    report_reasons = ["Phishing and Malware-Related Scams", "Social Engineering Scams", "Trade and Transaction Scams", "Fake Service and Site Scams", "Other"]
+    report_reasons = ["Physical Threat or Sexual Violence", "Suicidal Content", "Phishing and Malware-Related Scams", "Social Engineering Scams", "Trade and Transaction Scams", "Fake Service and Site Scams", "Other"]
     phishing_and_malware_categories = ["Phishing Email or Message", "Link to Malware Download", "Fake Steam Code Generator", "Other"]
     social_engineering_categories = ["Impersonation or False Identity", "Fraudulent Giveaway or Sweepstakes", "Middleman Scams", "False Skin Inspection", "Other"]
     trade_and_transaction_categories = ["False Trade Offers", "Real Currency Transaction Scams", "False Market Listing", "Non-Human Transaction", "Chargeback Scam", "Other"]
@@ -45,6 +47,9 @@ class Report:
             "4️⃣": "Fake Service and Site Scams",
             "5️⃣": "Other"
         }
+
+        self.violence = False
+        self.suicide = False
 
     async def handle_message(self, message):
         '''
@@ -88,11 +93,15 @@ class Report:
             self.state = State.MESSAGE_IDENTIFIED
             self.report["Reported Message"] = "```" + message.author.name + ": " + message.content + "```"
             self.report["Abuser"] = message.author.id
-            return ["I found this message:", "```" + message.author.name + ": " + message.content + "``` How do you want to classify this message? We can support the following: \n" + str(self.report_reasons)]
+            return ["I found this message:", "```" + message.author.name + ": " + message.content + "``` How do you want to classify this message? We can support the following: \n\n" + "\n".join(self.report_reasons)]
 
         # Continue with identifying the reason
         if self.state == State.MESSAGE_IDENTIFIED:
-            if message.content == "Phishing and Malware-Related Scams":
+            if message.content == "Physical Threat or Sexual Violence":
+                self.state = State.Physical_and_Sexual_Violence
+            elif message.content == "Suicidal Content":
+                self.state = State.Suicidal_Content
+            elif message.content == "Phishing and Malware-Related Scams":
                 self.state = State.Phishing_and_Malware_Related_Scams_Category
             elif message.content == "Social Engineering Scams":
                 self.state = State.Social_Engineering_Scams
@@ -104,6 +113,18 @@ class Report:
                 self.state = State.Other_Scams
 
             self.report["Report Reason"] = message.content
+
+            if self.state == State.Physical_and_Sexual_Violence:
+                self.violence = True
+                reply = "Would you like to block this user to prevent them from sending you more messages in the future? Please type 'yes' or 'no'"
+                self.state = State.Awaiting_Block
+                return [reply]
+
+            if self.state == State.Suicidal_Content:
+                self.suicide = True
+                reply = "Would you like to block this user to prevent them from sending you more messages in the future? Please type 'yes' or 'no'"
+                self.state = State.Awaiting_Block
+                return [reply]
 
             if self.state == State.Phishing_and_Malware_Related_Scams_Category:
                 reply = "Thank you for reporting under the Phishing and Malware Related Scams Category. \n"
@@ -183,6 +204,12 @@ class Report:
             self.report["Blocked"] = (message.content.lower() == "yes")
             self.state = State.REPORT_COMPLETE
             await self.send_report()
+
+            if self.violence:
+                reply += "\n\n [Send Authority and/or Additional Help Information]"
+            if self.suicide:
+                reply += "\n\n [Send Message About Receiving Help]"
+                reply += "\n 1-800-273-8255 (Now 988)"
             return [reply]
         return
 

@@ -279,7 +279,7 @@ class ModBot(discord.Client):
                 action_message += f"{emoji}: {action}\n"
             action_message += "\n-------------------------------------"
             formatted_message = f"""
-                    🚨 Potential Scam Alert 🚨
+                    🚨 Potential Abuse Alert 🚨
 
 Suspected Message: ```{message.author.name} (ID: {message.author.id}): {message.content}```
 Reason: {reason}
@@ -302,14 +302,14 @@ Reason: {reason}
                 print(attachment.proxy_url)
                 output, text = self.model.classify_image(attachment.proxy_url)
                 outcome, reason = output
-                if outcome == 'Scam':
+                if reason:
                     message.content += "\n" + text
                     await report()
                     break
 
         # Forward the message to the mod channel
         outcome, reason = self.model.classify_text(message.content)
-        if outcome == 'Scam':
+        if reason:
             await report()
 
 

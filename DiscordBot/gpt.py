@@ -25,17 +25,22 @@ class Classifier:
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system",
-                 "content": "You are a content moderation system trained to detect potential scams in CS:GO trades. A message may be considered a scam if it suggests trading outside the official platform, asks for login credentials, or directs users to a third-party website. Classify each input as either 'Scam' or 'Not a Scam'."},
-                {"role": "user", "content": f"Is the following message a potential scam, and if so why? Please make sure to start your response with either 'Scam.' or 'Not a scam.' followed by the reason. Message: {message} "}
+                 "content": "You are a content moderation system trained to detect potential scams in CS:GO trades and other forms of abuse such as physical threats, sexually violent content, or suicidal content. A message may be considered a scam if it suggests trading outside the official platform, asks for login credentials, or directs users to a third-party website. A message may be considered a physical threat or sexually violent content if it involves explicit or implicit threats or violent language of a sexual nature. A message may be considered suicidal content if it expresses thoughts of suicide or self-harm. Classify each input with the appropriate category, followed by the reason."},
+                {"role": "user", "content": f"Is the following message a potential scam, physical threat or sexually violent content, or suicidal content, and if so why? Please make sure to start your response with the appropriate category (Scam, Physical Threat or Sexual Violence, Suicidal Content) and a period followed by the reason. Message: {message} "}
             ]
         )
 
         output = response['choices'][0]['message']['content']
-        # output = "Scam. The message directs users to a third-party website, which is a common tactic used by scammers to steal login credentials or trick users into downloading malware."
+        print(output)
+
         if output.startswith("Scam."):
             return "Scam", output[len("Scam."):].strip()
+        elif output.startswith("Physical Threat or Sexual Violence."):
+            return "Physical Threat or Sexual Violence", output[len("Physical Threat or Sexual Violence."):].strip()
+        elif output.startswith("Suicidal Content."):
+            return "Suicidal Content", output[len("Suicidal Content."):].strip()
         else:
-            return "Not Scam", "N/A"
+            return "Not a Scam or Abuse", None
 
     # Add any additional preprocessing steps
 
