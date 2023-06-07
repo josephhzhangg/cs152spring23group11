@@ -296,6 +296,7 @@ Reason: {reason}
         if not message.channel.name == f'group-{self.group_num}':
             return
 
+        reason = None
         attachments = message.attachments
         if attachments:
             for attachment in attachments:
@@ -308,9 +309,10 @@ Reason: {reason}
                     break
 
         # Forward the message to the mod channel
-        outcome, reason = self.model.classify_text(message.content)
-        if reason:
-            await report()
+        if not reason:
+            outcome, reason = self.model.classify_text(message.content)
+            if reason:
+                await report()
 
 
     def eval_text(self, message):
